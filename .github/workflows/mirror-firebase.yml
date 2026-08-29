@@ -1,0 +1,44 @@
+name: Mirror Cloudflare to Firebase
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+      
+      - name: Download latest Cloudflare site
+        run: |
+          mkdir -p site_content
+          cd site_content
+          wget --mirror --convert-links --adjust-extension --page-requisites --no-parent \
+               --wait=1 --limit-rate=100k \
+               --user-agent="GitHub-Mirror-Bot/1.0" \
+               https://classpixelgames.com/
+          
+          if [ -d "classpixelgames.com" ]; then
+            mv classpixelgames.com/* ./
+            rm -rf classpixelgames.com
+          fi
+      
+      - name: Deploy to Firebase
+        run: |
+          echo "$FIREBASE_SERVICE_ACCOUNT" > /tmp/firebase-key.json
+          export GOOGLE_APPLICATION_CREDENTIALS="/tmp/firebase-key.json"
+          firebase deploy --only hosting --project classpixel-games
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
