@@ -41,26 +41,41 @@ def process_html_files(directory):
                 with open(filepath, 'r', encoding='utf-8') as f:
                     content = f.read()
 
-                # Find ALL GameMonetize image URLs (both img src and CSS background)
-                pattern = r'https://img\.gamemonetize\.com/([^\s"\'()]+\.jpg)'
+                # Find ALL GameMonetize image URLs (including encoded and relative paths)
+                # This regex is more flexible and catches more variations
+                pattern = r'https://img\.gamemonetize\.com/([^\s"\'()<>]+\.jpg)'
                 matches = re.findall(pattern, content)
-                if not matches:
+                
+                # Also catch if the URL has query parameters
+                pattern2 = r'https://img\.gamemonetize\.com/([^\s"\'()<>]+\.jpg\?[^\s"\'()<>]*)'
+                matches2 = re.findall(pattern2, content)
+                all_matches = matches + matches2
+                
+                if not all_matches:
                     continue
 
-                total_urls += len(matches)
-                print(f"\n📄 Found {len(matches)} image URLs in {filepath}")
+                total_urls += len(all_matches)
+                print(f"\n📄 Found {len(all_matches)} image URLs in {filepath}")
 
                 # Process each unique URL (avoid duplicates)
-                for match in set(matches):
+                for match in set(all_matches):
+                    # If the URL has query parameters (e.g., ?v=123), strip them
+                    clean_match = match.split('?')[0] if '?' in match else match
                     full_url = f'https://img.gamemonetize.com/{match}'
+                    
                     # Create a safe filename by replacing slashes with underscores
-                    safe_filename = match.replace('/', '_')
+                    safe_filename = clean_match.replace('/', '_')
                     local_path = f'img/gamemonetize/{safe_filename}'
 
                     if download_image(full_url, local_path):
                         img_count += 1
                         # Replace all occurrences of this URL in the content
                         content = content.replace(full_url, f'/{local_path}')
+                        
+                        # Also replace the version without query parameters
+                        if '?' in match:
+                            clean_url = f'https://img.gamemonetize.com/{clean_match}'
+                            content = content.replace(clean_url, f'/{local_path}')
 
                 # Write the updated HTML back
                 with open(filepath, 'w', encoding='utf-8') as f:
