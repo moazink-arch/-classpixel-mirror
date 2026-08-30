@@ -8,58 +8,39 @@ on:
 jobs:
   mirror:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-      
+
+      - name: Install Python dependencies
+        run: pip install requests
+
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
-      
+
       - name: Download latest Cloudflare site
         run: |
           mkdir -p site_content
           cd site_content
-          
-          # Download the entire site
           wget --mirror --convert-links --adjust-extension --page-requisites --no-parent \
                --wait=1 --limit-rate=100k \
                --user-agent="GitHub-Mirror-Bot/1.0" \
                https://classpixelgames.com/
-          
-          # Move content out of domain directory
           if [ -d "classpixelgames.com" ]; then
             mv classpixelgames.com/* ./
             rm -rf classpixelgames.com
           fi
-          
-          # Create images directory
-          mkdir -p img/gamemonetize
-          
-          # Extract ALL image URLs from HTML files and download them
-          echo "Downloading all game thumbnails..."
-          find . -name "*.html" -type f | while read html_file; do
-            grep -o 'https://img.gamemonetize.com/[^"]*\.jpg' "$html_file" 2>/dev/null | while read img_url; do
-              # Get just the filename (e.g., ana.../512x384.jpg)
-              filename=$(echo "$img_url" | sed 's|https://img.gamemonetize.com/||' | sed 's|/|_|g')
-              echo "Downloading: $filename"
-              wget -q "$img_url" -O "img/gamemonetize/$filename" || echo "Failed to download: $img_url"
-            done
-          done
-          
-          # Rewrite HTML to use local image paths
-          echo "Rewriting HTML to use local images..."
-          find . -name "*.html" -type f | while read html_file; do
-            sed -i 's|https://img.gamemonetize.com/[^"]*\.jpg|/img/gamemonetize/|g' "$html_file"
-          done
-          
-          echo "Download complete. Site content is ready."
-      
+          cd ..
+
+      - name: Download images and rewrite HTML
+        run: python scripts/mirror.py
+
       - name: Deploy to Firebase
         run: |
           echo "$FIREBASE_SERVICE_ACCOUNT" > /tmp/firebase-key.json
