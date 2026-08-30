@@ -21,52 +21,16 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
       
-      - name: Download latest Cloudflare site with images
+      - name: Download latest Cloudflare site
         run: |
           mkdir -p site_content
           cd site_content
           
-          # Download the entire site with wget (including page requisites)
+          # Download the entire site
           wget --mirror --convert-links --adjust-extension --page-requisites --no-parent \
                --wait=1 --limit-rate=100k \
                --user-agent="GitHub-Mirror-Bot/1.0" \
                https://classpixelgames.com/
-          
-          # Extract all game thumbnail URLs from HTML files
-          echo "Extracting game thumbnail URLs..."
-          mkdir -p img/gamemonetize
-          
-          # Find all HTML files and extract image URLs
-          find . -name "*.html" -type f | while read html_file; do
-            # Extract all img.gamemonetize.com URLs
-            grep -o 'https://img.gamemonetize.com/[^"]*\.jpg' "$html_file" 2>/dev/null | while read img_url; do
-              # Generate a clean filename from the URL
-              filename=$(echo "$img_url" | sed 's|https://img.gamemonetize.com/||' | sed 's|/|_|g' | sed 's|\.\.\.||g')
-              
-              # Download the image if it doesn't exist
-              if [ ! -f "img/gamemonetize/$filename" ]; then
-                echo "Downloading: $img_url"
-                wget -q "$img_url" -O "img/gamemonetize/$filename" || echo "Failed: $img_url"
-              fi
-            done
-          done
-          
-          # Also extract images from the games.html page
-          if [ -f "classpixelgames.com/games.html" ]; then
-            grep -o 'https://img.gamemonetize.com/[^"]*\.jpg' "classpixelgames.com/games.html" 2>/dev/null | while read img_url; do
-              filename=$(echo "$img_url" | sed 's|https://img.gamemonetize.com/||' | sed 's|/|_|g' | sed 's|\.\.\.||g')
-              if [ ! -f "img/gamemonetize/$filename" ]; then
-                echo "Downloading: $img_url"
-                wget -q "$img_url" -O "img/gamemonetize/$filename" || echo "Failed: $img_url"
-              fi
-            done
-          fi
-          
-          # Update all HTML files to use local image paths
-          echo "Updating HTML files to use local image paths..."
-          find . -name "*.html" -type f | while read html_file; do
-            sed -i 's|https://img.gamemonetize.com/[^"]*\.jpg|/img/gamemonetize/|g' "$html_file"
-          done
           
           # Move content out of domain directory
           if [ -d "classpixelgames.com" ]; then
@@ -74,9 +38,27 @@ jobs:
             rm -rf classpixelgames.com
           fi
           
-          # Create a fallback favicon if missing
-          echo "Creating fallback files..."
-          touch .nojekyll
+          # Create images directory
+          mkdir -p img/gamemonetize
+          
+          # Extract ALL image URLs from HTML files and download them
+          echo "Downloading all game thumbnails..."
+          find . -name "*.html" -type f | while read html_file; do
+            grep -o 'https://img.gamemonetize.com/[^"]*\.jpg' "$html_file" 2>/dev/null | while read img_url; do
+              # Get just the filename (e.g., ana.../512x384.jpg)
+              filename=$(echo "$img_url" | sed 's|https://img.gamemonetize.com/||' | sed 's|/|_|g')
+              echo "Downloading: $filename"
+              wget -q "$img_url" -O "img/gamemonetize/$filename" || echo "Failed to download: $img_url"
+            done
+          done
+          
+          # Rewrite HTML to use local image paths
+          echo "Rewriting HTML to use local images..."
+          find . -name "*.html" -type f | while read html_file; do
+            sed -i 's|https://img.gamemonetize.com/[^"]*\.jpg|/img/gamemonetize/|g' "$html_file"
+          done
+          
+          echo "Download complete. Site content is ready."
       
       - name: Deploy to Firebase
         run: |
