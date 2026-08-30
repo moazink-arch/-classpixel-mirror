@@ -33,57 +33,70 @@ def process_html_files(directory):
     img_count = 0
     total_urls = 0
 
+    # First, list all HTML files we find
+    print("\n📋 Scanning for HTML files...")
+    html_files = []
+    
+    # Walk through all directories
     for root, dirs, files in os.walk(directory):
         for file in files:
             if file.endswith('.html'):
-                filepath = os.path.join(root, file)
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    content = f.read()
+                full_path = os.path.join(root, file)
+                html_files.append(full_path)
+                print(f"   Found: {full_path}")
 
-                # ------------------------------------------------------------
-                # CATCH ALL GameMonetize URLs – this is the key fix
-                # ------------------------------------------------------------
-                # This regex finds ANY https://img.gamemonetize.com/...jpg URL
-                # regardless of whether it's in src="", url(''), or anywhere else
-                pattern = r'https://img\.gamemonetize\.com/([^\s"\'()<>]+\.jpg)'
-                matches = re.findall(pattern, content)
+    # ALSO explicitly check for index.html in the root directory
+    index_path = os.path.join(directory, 'index.html')
+    if os.path.exists(index_path) and index_path not in html_files:
+        html_files.append(index_path)
+        print(f"   Added explicitly: {index_path}")
+
+    print(f"\n📄 Found {len(html_files)} HTML files total.")
+
+    # Process each HTML file
+    for filepath in html_files:
+        print(f"\n📄 Processing: {filepath}")
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Find ALL GameMonetize URLs (in src, CSS, anywhere)
+        pattern = r'https://img\.gamemonetize\.com/([^\s"\'()<>]+\.jpg)'
+        matches = re.findall(pattern, content)
+        
+        pattern2 = r'https://img\.gamemonetize\.com/([^\s"\'()<>]+\.jpg\?[^\s"\'()<>]*)'
+        matches2 = re.findall(pattern2, content)
+        
+        all_matches = list(set(matches + matches2))
+        
+        if not all_matches:
+            print(f"ℹ️ No image URLs found in {filepath}")
+            continue
+
+        total_urls += len(all_matches)
+        print(f"📸 Found {len(all_matches)} image URLs in {filepath}")
+
+        # Process each unique URL
+        for match in all_matches:
+            clean_match = match.split('?')[0] if '?' in match else match
+            full_url = f'https://img.gamemonetize.com/{match}'
+            
+            # Create a safe filename
+            safe_filename = clean_match.replace('/', '_')
+            local_path = f'img/gamemonetize/{safe_filename}'
+
+            if download_image(full_url, local_path):
+                img_count += 1
+                content = content.replace(full_url, f'/{local_path}')
                 
-                # Also catch URLs with query parameters (?v=123)
-                pattern2 = r'https://img\.gamemonetize\.com/([^\s"\'()<>]+\.jpg\?[^\s"\'()<>]*)'
-                matches2 = re.findall(pattern2, content)
-                
-                all_matches = list(set(matches + matches2))  # Remove duplicates
-                
-                if not all_matches:
-                    continue
+                if '?' in match:
+                    clean_url = f'https://img.gamemonetize.com/{clean_match}'
+                    content = content.replace(clean_url, f'/{local_path}')
 
-                total_urls += len(all_matches)
-                print(f"\n📄 Found {len(all_matches)} image URLs in {filepath}")
-
-                # Process each unique URL
-                for match in all_matches:
-                    # Strip query parameters for the filename
-                    clean_match = match.split('?')[0] if '?' in match else match
-                    full_url = f'https://img.gamemonetize.com/{match}'
-                    
-                    # Create a safe filename
-                    safe_filename = clean_match.replace('/', '_')
-                    local_path = f'img/gamemonetize/{safe_filename}'
-
-                    if download_image(full_url, local_path):
-                        img_count += 1
-                        # Replace ALL occurrences of this URL in the content
-                        content = content.replace(full_url, f'/{local_path}')
-                        
-                        # Also replace the version without query parameters if it exists
-                        if '?' in match:
-                            clean_url = f'https://img.gamemonetize.com/{clean_match}'
-                            content = content.replace(clean_url, f'/{local_path}')
-
-                # Write the updated HTML back
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    f.write(content)
-                print(f"✅ Updated: {filepath}")
+        # Write the updated HTML back
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+        print(f"✅ Updated: {filepath}")
 
     print(f"\n📊 Summary: Downloaded {img_count} out of {total_urls} unique images.")
     return img_count
@@ -91,13 +104,16 @@ def process_html_files(directory):
 if __name__ == '__main__':
     print("🚀 Starting image download and HTML rewrite process...")
     
-    # Check if site_content exists
+    # Change to site_content directory
     if os.path.exists('site_content'):
         os.chdir('site_content')
         print("📁 Changed to site_content directory.")
     else:
-        print("⚠️ site_content directory not found! Make sure wget ran successfully.")
+        print("⚠️ site_content directory not found!")
         exit(1)
+
+    # Create img directory if it doesn't exist
+    os.makedirs('img/gamemonetize', exist_ok=True)
 
     downloaded = process_html_files('.')
     print("✅ Process complete!")
