@@ -28,83 +28,75 @@ def download_image(url, local_path):
         print(f"⚠️ Error downloading {url}: {e}")
         return False
 
+def rewrite_js_urls(content):
+    """Find and replace image URLs inside JavaScript blocks (like the GAMES array)."""
+    # Pattern to find thumb: "https://img.gamemonetize.com/...jpg"
+    pattern = r'thumb:"https://img\.gamemonetize\.com/([^"]+\.jpg)"'
+    matches = re.findall(pattern, content)
+    if matches:
+        print(f"Found {len(matches)} JavaScript image URLs to rewrite.")
+        for match in matches:
+            # The match is like "someid/512x384.jpg" or "someid/512x384.jpg?something"
+            # We need to replace / with _ to match the downloaded filenames
+            safe_filename = match.replace('/', '_')
+            local_path = f'/img/gamemonetize/{safe_filename}'
+            full_url = f'https://img.gamemonetize.com/{match}'
+            content = content.replace(f'thumb:"{full_url}"', f'thumb:"{local_path}"')
+    return content
+
 def process_html_files(directory):
     """Find all HTML files, extract image URLs, download them, and rewrite HTML."""
     img_count = 0
     total_urls = 0
 
-    # First, list all HTML files we find
-    print("\n📋 Scanning for HTML files...")
-    html_files = []
-    
-    # Walk through all directories
     for root, dirs, files in os.walk(directory):
         for file in files:
             if file.endswith('.html'):
-                full_path = os.path.join(root, file)
-                html_files.append(full_path)
-                print(f"   Found: {full_path}")
+                filepath = os.path.join(root, file)
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
 
-    # ALSO explicitly check for index.html in the root directory
-    index_path = os.path.join(directory, 'index.html')
-    if os.path.exists(index_path) and index_path not in html_files:
-        html_files.append(index_path)
-        print(f"   Added explicitly: {index_path}")
-
-    print(f"\n📄 Found {len(html_files)} HTML files total.")
-
-    # Process each HTML file
-    for filepath in html_files:
-        print(f"\n📄 Processing: {filepath}")
-        
-        with open(filepath, 'r', encoding='utf-8') as f:
-            content = f.read()
-
-        # Find ALL GameMonetize URLs (in src, CSS, anywhere)
-        pattern = r'https://img\.gamemonetize\.com/([^\s"\'()<>]+\.jpg)'
-        matches = re.findall(pattern, content)
-        
-        pattern2 = r'https://img\.gamemonetize\.com/([^\s"\'()<>]+\.jpg\?[^\s"\'()<>]*)'
-        matches2 = re.findall(pattern2, content)
-        
-        all_matches = list(set(matches + matches2))
-        
-        if not all_matches:
-            print(f"ℹ️ No image URLs found in {filepath}")
-            continue
-
-        total_urls += len(all_matches)
-        print(f"📸 Found {len(all_matches)} image URLs in {filepath}")
-
-        # Process each unique URL
-        for match in all_matches:
-            clean_match = match.split('?')[0] if '?' in match else match
-            full_url = f'https://img.gamemonetize.com/{match}'
-            
-            # Create a safe filename
-            safe_filename = clean_match.replace('/', '_')
-            local_path = f'img/gamemonetize/{safe_filename}'
-
-            if download_image(full_url, local_path):
-                img_count += 1
-                content = content.replace(full_url, f'/{local_path}')
+                # Find ALL GameMonetize URLs (from HTML attributes)
+                pattern = r'https://img\.gamemonetize\.com/([^\s"\'()<>]+\.jpg)'
+                matches = re.findall(pattern, content)
                 
-                if '?' in match:
-                    clean_url = f'https://img.gamemonetize.com/{clean_match}'
-                    content = content.replace(clean_url, f'/{local_path}')
+                pattern2 = r'https://img\.gamemonetize\.com/([^\s"\'()<>]+\.jpg\?[^\s"\'()<>]*)'
+                matches2 = re.findall(pattern2, content)
+                
+                all_matches = list(set(matches + matches2))
 
-        # Write the updated HTML back
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(content)
-        print(f"✅ Updated: {filepath}")
+                # If we find HTML image URLs, download and rewrite
+                if all_matches:
+                    total_urls += len(all_matches)
+                    print(f"\n📸 Found {len(all_matches)} image URLs in {filepath}")
+
+                    for match in all_matches:
+                        clean_match = match.split('?')[0] if '?' in match else match
+                        full_url = f'https://img.gamemonetize.com/{match}'
+                        safe_filename = clean_match.replace('/', '_')
+                        local_path = f'img/gamemonetize/{safe_filename}'
+
+                        if download_image(full_url, local_path):
+                            img_count += 1
+                            content = content.replace(full_url, f'/{local_path}')
+                            if '?' in match:
+                                clean_url = f'https://img.gamemonetize.com/{clean_match}'
+                                content = content.replace(clean_url, f'/{local_path}')
+
+                # NEW: Also rewrite JavaScript thumb URLs
+                content = rewrite_js_urls(content)
+
+                # Write the updated HTML back if any changes were made
+                if all_matches or 'thumb:"' in content:
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    print(f"✅ Updated: {filepath}")
 
     print(f"\n📊 Summary: Downloaded {img_count} out of {total_urls} unique images.")
     return img_count
 
 if __name__ == '__main__':
     print("🚀 Starting image download and HTML rewrite process...")
-    
-    # Change to site_content directory
     if os.path.exists('site_content'):
         os.chdir('site_content')
         print("📁 Changed to site_content directory.")
@@ -112,8 +104,6 @@ if __name__ == '__main__':
         print("⚠️ site_content directory not found!")
         exit(1)
 
-    # Create img directory if it doesn't exist
     os.makedirs('img/gamemonetize', exist_ok=True)
-
     downloaded = process_html_files('.')
     print("✅ Process complete!")
